@@ -3,6 +3,9 @@ from datetime import datetime, timedelta, date
 import pytz
 from ruobr_api import Ruobr, AuthenticationException
 
+from ruobr.ruobr_cls import Child, Subject
+from ruobr.ruobr_exception import RuobrIsEmptyError, RuobrIsApplicantError
+
 TIMEZONE = 'Asia/Krasnoyarsk'
 SATURDAY_NUM = 5
 SUNDAY_NUM = 6
@@ -18,21 +21,19 @@ def get_user_ruobr(username: str, password: str) -> Ruobr | None:
         return
 
 
-def get_children_for_user(user: Ruobr) -> dict[int, str] | None:
+def get_children_for_user(user: Ruobr) -> dict[int, str]:
     """Получить список всех детей пользователя."""
     if user.is_empty:
-        return
-
-    children_dict = {}
+        raise RuobrIsEmptyError('На аккаунте не обнаружено детей.')
 
     if user.is_applicant:  # Обработка родительского аккаунта
-        children = user.get_children()
-        for i in range(len(children)):
-            first_name = children[i]['first_name']
-            last_name = children[i]['last_name']
-            children_dict[i+1] = f'{first_name} {last_name}'
-
-    return children_dict
+        children = [Child(**child) for child in user.get_children()]
+        return {
+            ind + 1: f'{child.first_name} {child.last_name}'
+            for ind, child in enumerate(children)
+        }
+    else:
+        raise RuobrIsApplicantError('Профиль не является родительским.')
 
 
 def get_child(user: Ruobr, child_number: int = 1) -> Ruobr:
@@ -46,66 +47,56 @@ def homework_for_date(
 ) -> dict[str, dict[str, list[str]]]:
     """Получить всю домашнюю работу за указанный период."""
     timetable = user.get_timetable(date_start, date_end)
+    subjects = [Subject(**subject) for subject in timetable]
     homeworks = {}
-
-    for obj in timetable:
-        date = obj.get('date')
-        tasks = obj.get('task')
-        subject = obj.get('subject')
-
-        if tasks:
-            homework = []
-            for task in tasks:
-                homework.append(task.get('title'))
-
-            homeworks.setdefault(date, {})[subject] = homework
-
+    for subject in subjects:
+        if subject.task:
+            homework = [task.title for task in subject.task]
+            homeworks.setdefault(subject.date, {})[subject.subject] = homework
     return homeworks
 
 
 def get_homeworks_for_print(homeworks: dict[str, dict[str, list[str]]]) -> str:
     """Возвращает сформированную для вывода строку с домашней работой."""
-    str_homeworks = ''
+    hw_for_print = ''
 
     for date in homeworks:
-        str_homeworks += f'\n\n<b>Домашнее задание на {date}:</b>'
+        hw_for_print += f'\n\nДомашнее задание на {date}:'
         for subject in homeworks[date]:
-            str_homeworks += f'\n{subject}: '
-            for homework in homeworks[date][subject]:
-                str_homeworks += f'{homework} '
+            hw_for_print += f'\n{subject}: '
+            hw_for_print += ' '.join(homeworks[date][subject])
 
-    if str_homeworks:
-        return str_homeworks
+    if hw_for_print:
+        return hw_for_print
     return 'Ура! домашки нет.'
 
 
 def timetable_for_date(
-    user: Ruobr, date_start: date, date_end: date
-) -> dict[str, dict[str, tuple[str]]]:
+        user: Ruobr, date_start: date, date_end: date
+) -> dict[str, dict[str, tuple[str, str]]]:
     """Получить расписание за указанный период."""
     timetable = user.get_timetable(date_start, date_end)
+    subjects = [Subject(**subject) for subject in timetable]
     timetable_date = {}
-    for obj in timetable:
-        date_ = obj.get('date')
-        subject = obj.get('subject')
-        time_start = obj.get('time_start')
-        time_end = obj.get('time_end')
-        timetable_date.setdefault(date_, {})[subject] = (time_start, time_end)
+    for subject in subjects:
+        timetable_date.setdefault(subject.date, {})[subject.subject] = (
+            subject.time_start, subject.time_end
+        )
     return timetable_date
 
 
 def get_timetable_for_print(timetable: dict[str, dict[str, tuple[str]]]) -> str:
     """Возвращает сформированную для вывода строку с расписанием."""
-    str_timetable = ''
+    timetable_for_print = ''
     for date in timetable:
-        str_timetable += f'\n\n<b>Расписание на {date}:</b>'
+        timetable_for_print += f'\n\nРасписание на {date}:'
         for subject in timetable[date]:
-            str_timetable += (
-                f'\n<i>{timetable[date][subject][0][:5]}'
-                f'-{timetable[date][subject][1][:5]}</i> {subject}'
+            timetable_for_print += (
+                f'\n{timetable[date][subject][0][:5]}'
+                f'-{timetable[date][subject][1][:5]} {subject}'
             )
-    if str_timetable:
-        return str_timetable
+    if timetable_for_print:
+        return timetable_for_print
     return 'На указанные даты расписания нет!'
 
 
@@ -127,7 +118,9 @@ def get_homeworks_tomorrow_date(user: Ruobr) -> dict[str, dict[str, list[str]]]:
     return homework_for_date(user, tomorrow_date, tomorrow_date)
 
 
-def get_timetable_tomorrow_date(user: Ruobr) -> dict[str, dict[str, tuple[str]]]:
+def get_timetable_tomorrow_date(
+        user: Ruobr
+) -> dict[str, dict[str, tuple[str, str]]]:
     """Получить расписание на завтра."""
     tomorrow_date = get_tomorrow_date()
     return timetable_for_date(user, tomorrow_date, tomorrow_date)
@@ -159,7 +152,7 @@ def get_homeworks_for_week(user: Ruobr) -> dict[str, dict[str, list[str]]]:
     return homework_for_date(user, dates[0], dates[1])
 
 
-def get_timetable_for_week(user: Ruobr) -> dict[str, dict[str, tuple[str]]]:
+def get_timetable_for_week(user: Ruobr) -> dict[str, dict[str, tuple[str, str]]]:
     """Получить расписание на неделю."""
     dates = get_date_week()
     return timetable_for_date(user, dates[0], dates[1])
@@ -171,7 +164,7 @@ def get_homeworks_for_today(user: Ruobr) -> dict[str, dict[str, list[str]]]:
     return homework_for_date(user, current_date, current_date)
 
 
-def get_timetable_for_today(user: Ruobr) -> dict[str, dict[str, tuple[str]]]:
+def get_timetable_for_today(user: Ruobr) -> dict[str, dict[str, tuple[str, str]]]:
     """Получить расписание на сегодня."""
     current_date = get_current_date()
     return timetable_for_date(user, current_date, current_date)

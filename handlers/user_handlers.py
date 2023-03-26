@@ -1,3 +1,4 @@
+import base64
 from typing import Callable
 
 from aiogram import Dispatcher
@@ -41,7 +42,14 @@ async def get_username_password_ruobr(
     """Принимает логин и пароль пользователя Rubor."""
     user_ruobr: Ruobr | None = get_user_ruobr(user.username, user.password)
     if user_ruobr:
-        await state.update_data(username=user.username, password=user.password)
+        await state.update_data(
+            username=base64.b64encode(
+                user.username.upper().encode('UTF-8')
+            ).decode('UTF-8'),
+            password=base64.b64encode(
+                user.password.encode('UTF-8')
+            ).decode('UTF-8')
+        )
         await message.answer(text=LEXICON['authentication'])
         if len(get_children_for_user(user_ruobr)) > 1:
             await message.answer(
@@ -65,12 +73,14 @@ async def command_get_child(message: Message, state: FSMContext):
     """
     context_data = await state.get_data()
     user_ruobr = get_user_ruobr(
-        context_data.get('username'),
-        context_data.get('password'),
+        base64.b64decode(context_data.get('username').encode('UTF-8')).decode(
+            'UTF-8'),
+        base64.b64decode(context_data.get('password').encode('UTF-8')).decode(
+            'UTF-8'),
     )
 
     await message.answer(
-        text=LEXICON['authentication'],
+        text=LEXICON['select_child'],
         reply_markup=create_children_keyboard(
             get_children_for_user(user_ruobr)
         ),
@@ -108,8 +118,10 @@ async def get_homework(callback: CallbackQuery, state: FSMContext):
     }
     context_data = await state.get_data()
     user_ruobr: Ruobr = get_user_ruobr(
-        context_data.get('username'),
-        context_data.get('password'),
+        base64.b64decode(context_data.get('username').encode('UTF-8')).decode(
+            'UTF-8'),
+        base64.b64decode(context_data.get('password').encode('UTF-8')).decode(
+            'UTF-8'),
     )
     user_ruobr: Ruobr = get_child(user_ruobr)
     hw: dict = get_homework.get(callback.data)(user_ruobr)
@@ -141,8 +153,10 @@ async def get_schedule(callback: CallbackQuery, state: FSMContext):
     }
     context_data = await state.get_data()
     user_ruobr = get_user_ruobr(
-        context_data.get('username'),
-        context_data.get('password'),
+        base64.b64decode(context_data.get('username').encode('UTF-8')).decode(
+            'UTF-8'),
+        base64.b64decode(context_data.get('password').encode('UTF-8')).decode(
+            'UTF-8'),
     )
     user_ruobr = get_child(user_ruobr)
     timetable: dict = get_timetable.get(callback.data)(user_ruobr)

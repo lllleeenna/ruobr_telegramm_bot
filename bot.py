@@ -25,7 +25,7 @@ async def main():
     logger.info('Starting bot')
     config: Config = load_config()
     bot: Bot = Bot(token=config.tg_bot.token, parse_mode='HTML')
-    storage = RedisStorage.from_url(url=config.db.db_link)
+    storage: RedisStorage = RedisStorage.from_url(url=config.db.db_link)
     dp: Dispatcher = Dispatcher(storage=storage)
 
     await set_main_menu(bot)

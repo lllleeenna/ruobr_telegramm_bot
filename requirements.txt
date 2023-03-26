@@ -3,4 +3,5 @@ environs==9.5.0
 pytz==2022.7.1
 ruobr-api==2.0.2
 redis==4.5.1
+pydantic==1.10.6
 
